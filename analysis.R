@@ -4,6 +4,7 @@ library(lme4)
 library(lmerTest)
 library(ggplot2)
 library(ggpubr)
+library(magrittr)
 
 data <- read.csv('postop_cytok_over_time.csv')
 head(data)
@@ -11,8 +12,9 @@ str(data)
 data$surgery <- as.factor(data$surgery)
 data$horse <- as.factor(data$horse)
 
-data[,c(1,3:7)] %>% group_by(surgery, time) %>% summarise('mean' = mean(),
-                                                          'sd' = sd())
+data %>% group_by(time, surgery) %>%
+  summarise(across(c(il.18, il.2, ip.10, il.10),
+                   c(mean = ~mean(.x), sd = ~sd(.x))))
 
 model_il.18 <- lmer(il.18 ~ surgery + time + (1|horse), data = data)
 summary(model_il.18)
@@ -95,7 +97,7 @@ p5_2
 
 data3 <- data2 %>% filter(horse != 2)
 
-model3_il.18 <- lmer(il.18 ~ surgery + (1|horse), data = data3)
+model3_il.18 <- lmer(il.18 ~ surgery*time + (1|horse), data = data3)
 summary(model3_il.18)
 anova(model3_il.18)
 

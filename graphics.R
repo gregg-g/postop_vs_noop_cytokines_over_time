@@ -6,7 +6,7 @@ library(lmerTest)
 library(ggplot2)
 library(ggpubr)
 
-### Will need to read in models from analysis prior to visualizing ###
+### Will need to read in data from analysis prior to visualizing ###
 
 p1 <- ggplot(data = data, aes(x = time, y = il.18, group = horse, color = surgery))
 p1 <- p1 + geom_point() +

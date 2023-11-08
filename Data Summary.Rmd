@@ -1,0 +1,177 @@
+---
+title: "Postop Cytokines over Time"
+author: "Gregg Griffenhagen"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(emmeans)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(ggpubr)
+data <- read.csv('postop_cytok_over_time.csv')
+data$surgery <- as.factor(data$surgery)
+data$horse <- as.factor(data$horse)
+```
+
+## Quick Data Summary
+
+```{r, warning=FALSE}
+data %>% group_by(time, surgery) %>%
+  summarise(across(c(il.18, il.2, ip.10, il.10),
+                   c(mean = ~mean(.x), sd = ~sd(.x)))) %>%
+  kableExtra::kable()
+```
+
+## Nothing is significant, but the plots are interesting
+# Start with the full data set
+
+```{r, echo=FALSE}
+p1 <- ggplot(data = data, aes(x = time, y = il.18, group = horse, color = surgery))
+p1 <- p1 + geom_point() +
+  geom_line()
+
+p2 <- ggplot(data = data, aes(x = time, y = il.10, group = horse, color = surgery))
+p2 <- p2 + geom_point() +
+  geom_line()
+
+p3 <- ggplot(data = data, aes(x = time, y = il.2, group = horse, color = surgery))
+p3 <- p3 + geom_point() +
+  geom_line()
+
+p4 <- ggplot(data = data, aes(x = time, y = ip.10, group = horse, color = surgery))
+p4 <- p4 + geom_point() +
+  geom_line()
+
+p5 <- ggarrange(p1, p2, p3, p4, ncol = 2, nrow = 2, common.legend = TRUE, legend = "bottom")
+
+p5
+```
+
+## Remove the obvious outlier at the top and recheck plots
+
+```{r, echo=FALSE}
+data2 <- data %>% filter(horse != 13) #removes the outlier manually
+
+p1_2 <- ggplot(data = data2, aes(x = time, y = il.18, group = horse, color = surgery))
+p1_2 <- p1_2 + geom_point() +
+  geom_line()
+
+p2_2 <- ggplot(data = data2, aes(x = time, y = il.10, group = horse, color = surgery))
+p2_2 <- p2_2 + geom_point() +
+  geom_line()
+
+p3_2 <- ggplot(data = data2, aes(x = time, y = il.2, group = horse, color = surgery))
+p3_2 <- p3_2 + geom_point() +
+  geom_line()
+
+p4_2 <- ggplot(data = data2, aes(x = time, y = ip.10, group = horse, color = surgery))
+p4_2 <- p4_2 + geom_point() +
+  geom_line()
+
+p5_2 <- ggarrange(p1_2, p2_2, p3_2, p4_2, ncol = 2, nrow = 2, common.legend = TRUE, legend = "bottom")
+
+p5_2
+```
+
+## The 3 interleukins still demonstrate a single horse as an outlier (although not as bad)
+## Let's remove that one too
+
+```{r, echo=FALSE}
+data3 <- data2 %>% filter(horse != 2) # again remove the outlier manually
+
+p1_3 <- ggplot(data = data3, aes(x = time, y = il.18, group = horse, color = surgery))
+p1_3 <- p1_3 + geom_point() +
+  geom_line()
+
+#FOCUS ON THIS ONE  - seems to be the only one with differences
+p2_3 <- ggplot(data = data3, aes(x = time, y = il.10, group = horse, color = surgery))
+p2_3 <- p2_3 + geom_point() +
+  geom_line()
+
+p3_3 <- ggplot(data = data3, aes(x = time, y = il.2, group = horse, color = surgery))
+p3_3 <- p3_3 + geom_point() +
+  geom_line()
+
+p4_3 <- ggplot(data = data3, aes(x = time, y = ip.10, group = horse, color = surgery))
+p4_3 <- p4_3 + geom_point() +
+  geom_line()
+
+p5_3 <- ggarrange(p1_3, p2_3, p3_3, p4_3, ncol = 2, nrow = 2, common.legend = TRUE, legend = "bottom")
+
+p5_3
+```
+
+## Interindividual distribution looks better now - run models on all 4 cytokines using surgery (Y/N), time, and an interaction term with individual horse as a random effect.
+
+```{r}
+model3_il.18 <- lmer(il.18 ~ surgery*time + (1|horse), data = data3)
+summary(model3_il.18)
+
+model3_il.2 <- lmer(il.2 ~ surgery*time + (1|horse), data = data3)
+summary(model3_il.2)
+
+model3_ip.10 <- lmer(ip.10 ~ surgery*time + (1|horse), data = data3)
+summary(model3_ip.10)
+
+model3_il.10 <- lmer(il.10 ~ surgery*time + (1|horse), data = data3)
+summary(model3_il.10)
+```
+
+## None of the interactions are significant (no change in the time effect depending on whether surgery or not), so re-run without interaction term
+
+```{r}
+model3_il.18 <- lmer(il.18 ~ surgery+time + (1|horse), data = data3)
+summary(model3_il.18)
+
+model3_il.2 <- lmer(il.2 ~ surgery+time + (1|horse), data = data3)
+summary(model3_il.2)
+
+model3_ip.10 <- lmer(ip.10 ~ surgery+time + (1|horse), data = data3)
+summary(model3_ip.10)
+
+model3_il.10 <- lmer(il.10 ~ surgery+time + (1|horse), data = data3)
+summary(model3_il.10)
+```
+
+## Focus on IL-10, as this is the only one that demonstrated a difference between horses that had surgery and those that didn't.
+## Need to check the distribution of the data
+
+```{r}
+shapiro.test(data3$il.10)
+plot_norm1 <- plot(model3_il.10)
+plot_norm2 <- ggplot(data = data3, aes(x = il.10)) +
+  geom_histogram()
+plot_norm_1 <- ggarrange(plot_norm1, plot_norm2, nrow = 1)
+plot_norm_1
+```
+
+## So not distributed super well - try log transforming without the outlier data
+
+```{r}
+data4 <- data3 %>% mutate(log_il.10 = if_else(il.10 <= 0, 0, log(il.10)))
+
+model4_il.10 <- lmer(log_il.10 ~ surgery+time + (1|horse), data = data4)
+
+shapiro.test(data4$log_il.10)
+plot_norm3 <- plot(model4_il.10)
+plot_norm4 <- ggplot(data = data4, aes(x = log_il.10)) +
+  geom_histogram()
+plot_norm_2 <- ggarrange(plot_norm3, plot_norm4, nrow = 1)
+plot_norm_2
+```
+
+## Slightly better - should probably use this transformation for analysis
+```{r}
+p2_3
+anova(model4_il.10)
+```
+
+# IL-10 is significantly different in the first 48 hours when comparing horses that had surgery (lower) to those that didn't (higher), although there is no significant change over time in these 2 groups.
+
+
+
