@@ -6,13 +6,14 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(emmeans)
 library(lme4)
 library(lmerTest)
 library(ggplot2)
 library(ggpubr)
+library(kableExtra)
 data <- read.csv('postop_cytok_over_time.csv')
 data$surgery <- as.factor(data$surgery)
 data$horse <- as.factor(data$horse)
@@ -22,13 +23,38 @@ data$horse <- as.factor(data$horse)
 
 ```{r, warning=FALSE}
 data %>% group_by(time, surgery) %>%
-  summarise(across(c(il.18, il.2, ip.10, il.10),
-                   c(mean = ~mean(.x), sd = ~sd(.x)))) %>%
-  kableExtra::kable()
+  summarise(across(c(il.18, il.2),
+                   c(mean = ~mean(.x), se = ~sd(.x)/sum(!is.na(.x)),
+                     min = ~min(.x), max = ~max(.x)))) %>%
+  kable() %>%
+  kable_styling(font_size = 8, position = 'left', latex_options = 'hold_position')
+data %>% group_by(time, surgery) %>%
+  summarise(across(c(ip.10, il.10),
+                   c(mean = ~mean(.x), se = ~sd(.x)/sum(!is.na(.x)),
+                     min = ~min(.x), max = ~max(.x)))) %>%
+  kable() %>%
+  kable_styling(font_size = 8, position = 'left', latex_options = 'hold_position')
+data %>% group_by(time, surgery) %>%
+  summarise(across(c(temp, wbc),
+                   c(mean = ~mean(.x, na.rm=T), se = ~sd(.x, na.rm=T)/sum(!is.na(.x)),
+                     min = ~min(.x, na.rm=T), max = ~max(.x, na.rm=T)))) %>%
+  kable() %>%
+  kable_styling(font_size = 8, position = 'left', latex_options = 'hold_position')
+data %>% group_by(time, surgery) %>%
+  summarise(across(c(neut, lymph),
+                   c(mean = ~mean(.x, na.rm=T), se = ~sd(.x, na.rm=T)/sum(!is.na(.x)),
+                     min = ~min(.x, na.rm=T), max = ~max(.x, na.rm=T)))) %>%
+  kable() %>%
+  kable_styling(font_size = 8, position = 'left', latex_options = 'hold_position')
+data %>% group_by(time, surgery) %>%
+  summarise(across(c(fibr),
+                   c(mean = ~mean(.x, na.rm=T), se = ~sd(.x, na.rm=T)/sum(!is.na(.x)),
+                     min = ~min(.x, na.rm=T), max = ~max(.x, na.rm=T)))) %>%
+  kable() %>%
+  kable_styling(font_size = 8, position = 'left', latex_options = 'hold_position')
 ```
 
-## Nothing is significant, but the plots are interesting
-# Start with the full data set
+# Start with the plotting full cytokine data set
 
 ```{r, echo=FALSE}
 p1 <- ggplot(data = data, aes(x = time, y = il.18, group = horse, color = surgery))
@@ -108,7 +134,7 @@ p5_3
 
 ## Interindividual distribution looks better now - run models on all 4 cytokines using surgery (Y/N), time, and an interaction term with individual horse as a random effect.
 
-```{r}
+```{r, echo=FALSE}
 model3_il.18 <- lmer(il.18 ~ surgery*time + (1|horse), data = data3)
 summary(model3_il.18)
 
@@ -122,56 +148,137 @@ model3_il.10 <- lmer(il.10 ~ surgery*time + (1|horse), data = data3)
 summary(model3_il.10)
 ```
 
-## None of the interactions are significant (no change in the time effect depending on whether surgery or not), so re-run without interaction term
-
-```{r}
-model3_il.18 <- lmer(il.18 ~ surgery+time + (1|horse), data = data3)
-summary(model3_il.18)
-
-model3_il.2 <- lmer(il.2 ~ surgery+time + (1|horse), data = data3)
-summary(model3_il.2)
-
-model3_ip.10 <- lmer(ip.10 ~ surgery+time + (1|horse), data = data3)
-summary(model3_ip.10)
-
-model3_il.10 <- lmer(il.10 ~ surgery+time + (1|horse), data = data3)
-summary(model3_il.10)
-```
-
 ## Focus on IL-10, as this is the only one that demonstrated a difference between horses that had surgery and those that didn't.
-## Need to check the distribution of the data
+## Distribution is not great, so try log transformation of all 4 ###
 
 ```{r}
-shapiro.test(data3$il.10)
-plot_norm1 <- plot(model3_il.10)
-plot_norm2 <- ggplot(data = data3, aes(x = il.10)) +
-  geom_histogram()
-plot_norm_1 <- ggarrange(plot_norm1, plot_norm2, nrow = 1)
-plot_norm_1
+data4 <- data3 %>% mutate(log_il.18 = if_else(il.18 <= 0, 0, log(il.18)),
+                          log_il.2 = if_else(il.2 <= 0, 0, log(il.2)),
+                          log_ip.10 = if_else(ip.10 <= 0, 0, log(ip.10)),
+                          log_il.10 = if_else(il.10 <= 0, 0, log(il.10)))
+
+log_cytokine_vars <- list('log_il.18', 'log_il.2', 'log_ip.10', 'log_il.10')
+for (i in log_cytokine_vars){
+  model <- lmer(paste(i[[1]], "~ surgery*time + (1|horse)"), data = data4)
+  print(anova(model))
+  plot(resid(model, type = "pearson") ~ fitted(model))
+  qqnorm(resid(model, type = "pearson"))
+}
+### IL10 seems to be the one significant factor here ###
 ```
 
-## So not distributed super well - try log transforming without the outlier data
+## Focus on IL-10 and run contrasts
 
 ```{r}
-data4 <- data3 %>% mutate(log_il.10 = if_else(il.10 <= 0, 0, log(il.10)))
-
-model4_il.10 <- lmer(log_il.10 ~ surgery+time + (1|horse), data = data4)
-
-shapiro.test(data4$log_il.10)
-plot_norm3 <- plot(model4_il.10)
-plot_norm4 <- ggplot(data = data4, aes(x = log_il.10)) +
-  geom_histogram()
-plot_norm_2 <- ggarrange(plot_norm3, plot_norm4, nrow = 1)
-plot_norm_2
-```
-
-## Slightly better - should probably use this transformation for analysis
-```{r}
-p2_3
-anova(model4_il.10)
+model4_il.10 <- lmer(log_il.10 ~ surgery*factor(time) + (1|horse), data = data4) #factor time to allow for individual comparisons
+### Check contrasts
+emm_model1 <- emmeans(model4_il.10, ~surgery|time, at = list(time = c(0, 24, 48)))
+contrast(emm_model1, "trt.vs.ctrl")
+emm_model2 <- emmeans(model4_il.10, ~time|surgery, at = list(time = c(0, 24, 48)))
+contrast(emm_model2, "pairwise")
 ```
 
 # IL-10 is significantly different in the first 48 hours when comparing horses that had surgery (lower) to those that didn't (higher), although there is no significant change over time in these 2 groups.
 
+```{r}
+p2_3_final <- ggplot(data = data3, aes(x = time, y = il.10))
+p2_3_final <- p2_3_final + geom_point(aes(shape = surgery, group = horse)) +
+  geom_line(aes(linetype = surgery, group = horse)) +
+  stat_summary(aes(group = surgery, shape = surgery), geom = "point", position = position_dodge(width = 2), size = 4) +
+  stat_summary(aes(group = surgery), linetype = 'solid', geom = "line") +
+  stat_summary(aes(group = surgery), geom = "errorbar", width = 2, position = position_dodge(width = 2)) +
+  scale_linetype_manual(values = c(2,3)) +
+  scale_x_continuous(breaks = c(0, 24, 48)) +
+  theme_bw()
+p2_3_final
+```
 
+## Graph physiologic/CBC variables
+```{r}
+### Plot other data ###
+
+p1_4 <- ggplot(data = data, aes(x = time, y = temp, group = horse, color = surgery))
+p1_4 <- p1_4 + geom_point() +
+  geom_line()
+
+p2_4 <- ggplot(data = data, aes(x = time, y = wbc, group = horse, color = surgery))
+p2_4 <- p2_4 + geom_point() +
+  geom_line()
+
+p3_4 <- ggplot(data = data, aes(x = time, y = neut, group = horse, color = surgery))
+p3_4 <- p3_4 + geom_point() +
+  geom_line()
+
+p4_4 <- ggplot(data = data, aes(x = time, y = lymph, group = horse, color = surgery))
+p4_4 <- p4_4 + geom_point() +
+  geom_line()
+
+p5_4 <- ggplot(data = data, aes(x = time, y = fibr, group = horse, color = surgery))
+p5_4 <- p5_4 + geom_point(position = position_dodge(width = 2)) +
+  geom_line()
+
+p6_4 <- ggarrange(p1_4, p2_4, p3_4, p4_4, p5_4, ncol = 3, nrow = 2, common.legend = TRUE, legend = "bottom")
+
+p6_4
+```
+
+## Nothing stands out, so model individually
+```{r}
+phys_vars <- list('temp', 'wbc', 'neut', 'lymph', 'fibr')
+for (i in phys_vars){
+  model <- lmer(paste(i[[1]], "~ surgery*time + (1|horse)"), data = data)
+  print(anova(model))
+  plot(resid(model, type = "pearson") ~ fitted(model))
+  qqnorm(resid(model, type = "pearson"))
+}
+```
+
+## Looks like neutrophils and lymphocytes have some significant differences
+## resids look fine, let's check the contrasts for both
+### First neutrophils
+```{r}
+model_neut <- lmer(neut ~ surgery*factor(time) + (1|horse), data = data) #factor time to allow for individual comparisons
+### Check contrasts ###
+emmeans(model_neut, ~surgery|time, at = list(time = c(0, 24, 48))) %>%
+  contrast("trt.vs.ctrl")
+emmeans(model_neut, ~time|surgery, at = list(time = c(0, 24, 48))) %>%
+  contrast("pairwise")
+```
+## Then lymphocytes
+```{r}
+model_lymph <- lmer(lymph ~ surgery*factor(time) + (1|horse), data = data) #factor time to allow for individual comparisons
+### Check contrasts ###
+emmeans(model_lymph, ~surgery|time, at = list(time = c(0, 24, 48))) %>%
+  contrast("trt.vs.ctrl")
+emmeans(model_lymph, ~time|surgery, at = list(time = c(0, 24, 48))) %>%
+  contrast("pairwise")
+```
+## And graphically
+```{r}
+### Neutrophil comparison ###
+p_neut_final <- ggplot(data = data, aes(x = time, y = neut))
+p_neut_final <- p_neut_final + geom_point(aes(shape = surgery, group = horse)) +
+  geom_line(aes(linetype = surgery, group = horse)) +
+  stat_summary(aes(group = surgery, shape = surgery), geom = "point", position = position_dodge(width = 2), size = 4) +
+  stat_summary(aes(group = surgery), linetype = 'solid', geom = "line") +
+  stat_summary(aes(group = surgery), geom = "errorbar", width = 2, position = position_dodge(width = 2)) +
+  scale_linetype_manual(values = c(2,3)) +
+  scale_x_continuous(breaks = c(0, 24, 48)) +
+  theme_bw()
+p_neut_final
+
+### Lymphocyte comparison ###
+p_lymph_final <- ggplot(data = data, aes(x = time, y = lymph))
+p_lymph_final <- p_lymph_final + geom_point(aes(shape = surgery, group = horse)) +
+  geom_line(aes(linetype = surgery, group = horse)) +
+  stat_summary(aes(group = surgery, shape = surgery), geom = "point", position = position_dodge(width = 2), size = 4) +
+  stat_summary(aes(group = surgery), linetype = 'solid', geom = "line") +
+  stat_summary(aes(group = surgery), geom = "errorbar", width = 2, position = position_dodge(width = 2)) +
+  scale_linetype_manual(values = c(2,3)) +
+  scale_x_continuous(breaks = c(0, 24, 48)) +
+  theme_bw()
+p_lymph_final
+```
+# There was a significant effect of surgery on neutrophil counts, which were increased at all time points in the surgery group, but did not change from baseline in either group
+# Lymphocyte demonstrated a significanntly different change over time (the slopes of the best fit lines are different), with counts decreased at 24 and 48 hours in the surgery group over the non-surgery group, but no differences at baseline
 
